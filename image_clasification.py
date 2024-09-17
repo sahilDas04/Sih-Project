@@ -2,21 +2,24 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator # type: ignore
 from tensorflow.keras.models import Sequential # type: ignore
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization # type: ignore
-import matplotlib.pyplot as plt
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau # type: ignore
 import numpy as np
-import math
-
+import matplotlib.pyplot as plt
 
 train_dir = 'Dataset'
 
 
+class_names = ['paper', 'steel', 'plastic', 'plastic_bottle', 'glass', 'mirror'] 
+num_classes = len(class_names)
+
+
 datagen = ImageDataGenerator(
     rescale=1.0/255,
-    shear_range=0.2,
-    zoom_range=0.2,
+    shear_range=0.3,
+    zoom_range=0.3,
     horizontal_flip=True,
-    rotation_range=20,
-    brightness_range=[0.8, 1.2],
+    rotation_range=30,
+    brightness_range=[0.7, 1.3],
     validation_split=0.2
 )
 
@@ -25,65 +28,71 @@ train_generator = datagen.flow_from_directory(
     train_dir,
     target_size=(150, 150),
     batch_size=32,
-    class_mode='binary',
+    class_mode='categorical', 
     subset='training',
     shuffle=True
 )
-
 
 validation_generator = datagen.flow_from_directory(
     train_dir,
     target_size=(150, 150),
     batch_size=32,
-    class_mode='binary',
+    class_mode='categorical',
     subset='validation',
     shuffle=True
 )
 
 
-steps_per_epoch = math.ceil(train_generator.samples / train_generator.batch_size)
-validation_steps = math.ceil(validation_generator.samples / validation_generator.batch_size)
+print("Class indices:", train_generator.class_indices)
+num_classes_detected = len(train_generator.class_indices)
+
+
+steps_per_epoch = len(train_generator)
+validation_steps = len(validation_generator)
 
 
 model = Sequential([
-    Conv2D(32, (3, 3), activation='relu', input_shape=(150, 150, 3)),
-    MaxPooling2D(2, 2),
-    BatchNormalization(),  
+    tf.keras.Input(shape=(150, 150, 3)),
     
-    Conv2D(64, (3, 3), activation='relu'),
-    MaxPooling2D(2, 2),
+    Conv2D(32, (3, 3), activation='relu'),
     BatchNormalization(),
+    MaxPooling2D(2, 2),
+
+    Conv2D(64, (3, 3), activation='relu'),
+    BatchNormalization(),
+    MaxPooling2D(2, 2),
 
     Conv2D(128, (3, 3), activation='relu'),
-    MaxPooling2D(2, 2),
     BatchNormalization(),
+    MaxPooling2D(2, 2),
+
+    Conv2D(256, (3, 3), activation='relu'),
+    BatchNormalization(),
+    MaxPooling2D(2, 2),
 
     Flatten(),
     Dense(512, activation='relu'),
-    Dropout(0.5),  
-    Dense(1, activation='sigmoid')
+    Dropout(0.5),
+    Dense(num_classes_detected, activation='softmax')
 ])
 
 
-model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4), 
-              loss='binary_crossentropy', 
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),  
+              loss='categorical_crossentropy',
               metrics=['accuracy'])
 
 
-def safe_data_loader(generator):
-    while True:
-        try:
-            yield next(generator)
-        except Exception as e:
-            print(f"Error during data loading: {e}")
+early_stopping = EarlyStopping(monitor='val_accuracy', patience=5, restore_best_weights=True)
+lr_scheduler = ReduceLROnPlateau(monitor='val_accuracy', factor=0.5, patience=3, min_lr=1e-6)
 
 
 history = model.fit(
-    safe_data_loader(train_generator),
+    train_generator,
     steps_per_epoch=steps_per_epoch,
-    validation_data=safe_data_loader(validation_generator),
+    validation_data=validation_generator,
     validation_steps=validation_steps,
-    epochs=20
+    epochs=10, 
+    callbacks=[early_stopping, lr_scheduler]
 )
 
 
@@ -91,14 +100,6 @@ loss, accuracy = model.evaluate(validation_generator)
 print(f"Validation Accuracy: {accuracy * 100:.2f}%")
 
 
-model.save('swachhta_model_improved.h5')
+model.save('swachhta_model.h5')
 
-
-acc = history.history['accuracy']
-val_acc = history.history['val_accuracy']
-loss = history.history['loss']
-val_loss = history.history['val_loss']
-
-epochs_range = range(20)
-
-print("Model Trained Successfully!!!")
+print("Model is trained successfully!!!!!!")
